@@ -39,7 +39,7 @@ def plot_classifications(ax, labels=True):
     xlims = ax.get_xlim()
     ylims = ax.get_ylim()
     width = xlims[1]-xlims[0]
-    mass = xlims[0]
+    mass = max(0.08, xlims[0])
     while mass < xlims[1]:
         next_mass = class_upperbound[mass_class(mass+0.01)]
         if next_mass > xlims[1]:

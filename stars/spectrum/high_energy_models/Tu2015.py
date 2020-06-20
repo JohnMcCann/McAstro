@@ -4,7 +4,7 @@
 
 import numpy as np
 
-def _xray_luminosity(rot_rate, stellar_age):
+def xray_luminosity(rot_rate, stellar_age):
     """
     Description:
         Uses Equation 3 of Tu et al. 2015 to calculate a x-ray
@@ -25,15 +25,13 @@ def _xray_luminosity(rot_rate, stellar_age):
     Source paper:
         Sanz-Forcada et al. 2011 (2011A&A...532A...6S)
     """
+    rot_rate = np.asarray(rot_rate)
+    stellar_age = np.asarray(stellar_age)
     sol_rot_rate = 2.9e-6
     rot_rate = rot_rate/sol_rot_rate
     t_sat = 2.9e6*(rot_rate**1.14)
-    if stellar_age < t_sat:
-        L_x = 10.0**(30.46)
-    else:
-        solar_Lx_Tu = 10.0**(27.2)
-        solar_age_Tu = 4.57e9
-        b = 1.0/(0.35*np.log10(rot_rate)-0.98)
-        L_x = solar_Lx_Tu*(stellar_age/solar_age_Tu)**b
-    return L_x
-xray_luminosity = np.vectorize(_xray_luminosity)
+    solar_Lx_Tu = 10.0**(27.2)
+    solar_age_Tu = 4.57e9
+    b = 1.0/(0.35*np.log10(rot_rate)-0.98)
+    return np.where(stellar_age < t_sat, 10.0**(30.46),
+                    solar_Lx_Tu*(stellar_age/solar_age_Tu)**b)

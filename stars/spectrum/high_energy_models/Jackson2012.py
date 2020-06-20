@@ -8,8 +8,7 @@ from scipy.optimize import curve_fit
 def _exp_fit(x, a, b, c):
     return a * np.exp(-b * x) + c
 
-
-#B–V min, B–V max, # stars, log(L_x/L_bol), log(tau_sat), alpha
+#B–V min, B–V max, # stars, log10(L_x/L_bol)_sat, log10(tau_sat), alpha
 _Table2 = [
     [0.290, 0.450, 67,  -4.28, 7.87, 1.22],
     [0.450, 0.565, 97,  -4.24, 8.35, 1.24],
@@ -35,12 +34,13 @@ def _xray_fraction(BV0, stellar_age, extrapolate=False):
     Description:
         Uses Jackson et al. 2012 to estimate the x-ray luminosity as a
         fraction of the bolometric luminosity for a star given the B–V
-        colour, and stellar age. If no age is given we assume that star is
-        young and is saturated.
+        colour, and stellar age. If no age is given we assume that star
+        is young and is saturated.
         
     Notes:
         ^Jackson's results valid for 0.29 < B-V < 1.41
-        ^Use fitted curve for saturation fraction, average for alpha and tau_sat
+        ^Use fitted curve for saturation fraction, average for alpha
+         and tau_sat
     
     Arguments:
         BV0: intrinsic B-V colour (in magnitudes)
@@ -50,7 +50,7 @@ def _xray_fraction(BV0, stellar_age, extrapolate=False):
         extrapolate: extrapolate outside fitted colour range (boolean)
         
     Returns:
-        fraction of x-ray luminosity in terms of the bolometric luminosity.
+        X-ray luminosity in terms of the bolometric luminosity
              
     Source paper:
         Jackson et al. 2012 (2012MNRAS.422.2024J)
@@ -59,15 +59,15 @@ def _xray_fraction(BV0, stellar_age, extrapolate=False):
         if extrapolate or BV0 >= _Table2[0][0]:
             L_XoB = 10**_log_L_sat[0]
         else:
-            print("Warning: B-V color {:e} is outside of Jackson's data... "
-                  "Smallest B-V data point: {:e}".format(BV0, _Table2[0][0]))
+            print(f"ERROR: B-V color {BV0:e} is outside of Jackson's data...\n"
+                  f"       Smallest B-V data point: {_Table2[0][0]:e}")
             return -1
     elif BV0 > _bin_mean[-1]:
         if extrapolate or BV0 <= _Table2[-1][1]:
             L_XoB = 10**_log_L_sat[-1]
         else:
-            print("Warning: B-V color {:e} is outside of Jackson's data... "
-                  "Largest B-V data point: {:e}".format(BV0, _Table2[-1][1]))
+            print(f"ERROR: B-V color {BV0:e} is outside of Jackson's data...\n"
+                  f"       Largest B-V data point: {_Table2[-1][1]:e}")
             return -1
     else:
         L_XoB = 10**_exp_fit(BV0, *_L_sat_popt)

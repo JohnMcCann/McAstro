@@ -3,7 +3,7 @@
 import numpy as np
 from scipy import integrate, optimize
 
-import utils.constants as const
+import McAstro.utils.constants as const
 
 class planet_atmosphere:
     """

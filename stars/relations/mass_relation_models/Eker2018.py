@@ -3,7 +3,8 @@
 # Source paper: Eker et al. 2018 (2018MNRAS.479.5491E)
 
 import numpy as np
-from .... import constants as const
+
+from McAstro.utils import constants as const
 
 # Stephan-Boltzmann constant scaled for luminosity equation in solar units,
 # i.e., SB_solar * (R/Rsun)**2 * T**4 = L/Lsun, e.g., SB_solar * 5772**4 = 1

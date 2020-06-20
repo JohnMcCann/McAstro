@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from .... import constants as const
+from McAstro.utils import constants as const
 
 def _rotation_rate(BV0, age, extrapolate=False):
     """

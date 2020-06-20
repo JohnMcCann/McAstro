@@ -1,6 +1,31 @@
+#!/usr/bin/env python3
+
+# Source paper: Linsky et al. 2014 (2014ApJ...780...61L)
+
 import numpy as np
 
-def _f_uv_bins(f_Lya, Mstar=False):
+_band_edges = np.array([10, 20, 30, 40, 50, 60, 70, 80, 91.2, 117])
+_band_widths = np.diff(_band_edges)
+_band_centers = (_band_edges[1:]+_band_edges[:-1])/2
+
+def f_uv_bins(f_Lya, Mstar=False):
+    """
+    Description:
+        Uses Linsky et al. 2014 to calculate the uv spectrum binned into
+        9 bands at 1 au given a stellar Lyman alpha flux (also at 1 au).
+        Bands are [10-20], [20-30], [30-40], [40-50], [50-60], [60-70],
+        [70-80], [80-91.2], and [91.2-117] nm.
+
+    Arguments:
+        f_Lya: The Lyman-alpha flux at 1 a.u. (in ergs/cm^2/s)
+        
+    Keyword arguments:
+        Mstar: Boolean if the star is an M star
+        
+    Returns:
+        uv spectrum in 9 bins at 1 au (in erg/cm^2/s)
+    """
+    f_Lya = np.asarray(f_Lya)
     m = np.array([0.344, 0.309, 0.000, 0.258,
                   0.572, 0.240, 0.518, 0.764, 0.065])
     b = np.array([1.357, 1.300, 0.882, 2.294,
@@ -8,37 +33,46 @@ def _f_uv_bins(f_Lya, Mstar=False):
     if Mstar:
         m[:3] = [0.000, 0.000, 0.000]
         b[:3] = [0.491, 0.548, 0.602]
-    return f_Lya*10**(-b+m*np.log10(f_Lya))
-f_uv_bins = np.vectorize(_f_uv_bins)
+    if f_Lya.size > 1:
+        return np.array([(10**-b)*f**(1+m) for f in f_Lya])
+    else:
+        return f_Lya*10**(-b+m*np.log10(f_Lya))
 
-def _f_uv(f_Lya, Mstar=False):
+
+def f_uv(f_Lya, Mstar=False, wl_min=40, wl_max=91.2):
     """
-    Defining:
-            XUV as 10   to 60   nm
-            EUV as 60   to 91.2 nm
-            FUV sa 91.2 to 117  nm
+    Description:
+        Uses Linsky et al. 2014 to calculate a uv flux at 1 au given a
+        Lyman alpha flux (also at 1 au).
+
+    Arguments:
+        f_Lya: The Lyman-alpha flux at 1 a.u. (in ergs/cm^2/s)
+        
+    Keyword arguments:
+        Mstar: Boolean if the star is an M star
+        wl_min: Lower bound of integrated spectrum (in nm)
+        wl_max: Upper bound of integrated spectrum (in nm)
+        
+    Returns:
+        Integrated uv flux at 1 au (in erg/cm^2/s)
     """
+    if wl_min < _band_edges[0] or wl_max > _band_edges[-1]:
+        print("ERROR: wl_min outside Linsky's domain [10-117] nm.")
+        return
+    bmin = next(b for b, edge in enumerate(_band_edges) if edge > wl_min)-1
+    bmax = next(b for b, edge in enumerate(_band_edges) if edge >= wl_max)
+    f_Lya = np.asarray(f_Lya)
     f_bins = f_uv_bins(f_Lya, Mstar)
-    XUV = f_bins[0:5].sum()
-    EUV = f_bins[5:8].sum()
-    FUV = f_bins[8:].sum()
-    ion_to_40eV = f_bins[2:8].sum()
-    return XUV+EUV
-    #return np.array([XUV, EUV, FUV])
-f_uv = np.vectorize(_f_uv)
-
-
-def _n_uv_bins(f_Lya, Mstar=False):
-    mean_E = (C_h*C_c) / \
-        (np.array([150, 250, 350, 450, 550, 650, 750, 856, 1041])*1e-8)
-    return f_uv_bins(f_Lya, Mstar)/mean_E
-n_uv_bins = np.vectorize(_n_uv_bins)
-
-
-def _n_uv(f_Lya, Mstar=False):
-    n_bins = n_uv_bins(f_Lya, Mstar)
-    XUV = n_bins[0:5].sum()
-    EUV = n_bins[5:8].sum()
-    FUV = n_bins[8:].sum()
-    return np.array([XUV, EUV, FUV])
-n_uv = np.vectorize(_n_uv)
+    if f_Lya.size > 1:
+        f_uv = [None,]*len(f_Lya)
+        for i in range(len(f_Lya)):
+            f_uv[i] = f_bins[i][bmin:bmax].sum()
+            f_uv[i] -= (f_bins[i][bmin]
+                        *(wl_min-_band_edges[bmin])/_band_widths[bmin])
+            f_uv[i] -= (f_bins[i][bmax]
+                        *(_band_edges[bmax]-wl_max)/_band_widths[bmax])
+    else:
+        f_uv = f_bins[bmin:bmax].sum()
+        f_uv -= f_bins[bmin]*(wl_min-_band_edges[bmin])/_band_widths[bmin]
+        f_uv -= f_bins[bmax]*(_band_edges[bmax]-wl_max)/_band_widths[bmax]
+    return np.asarray(f_uv)

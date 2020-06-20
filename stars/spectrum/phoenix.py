@@ -6,6 +6,7 @@ from ftplib import FTP
 from astropy.io import fits
 from scipy.optimize import curve_fit
 from scipy import interpolate, integrate
+
 from .black_body import BlackBody, Planck_irradiance_wl
 
 class PHOENIX():
@@ -243,8 +244,8 @@ class PHOENIX():
             goodbye = ftp.quit()
         self.PHOENIX_fits = self.fits_directory+file
 
-    def spec_plot(self, ax):
-        ax.plot(self.wl, self.spec)
+    def spec_plot(self, ax, **kwargs):
+        ax.plot(self.wl, self.spec, **kwargs)
 
     def spec_integral(self, lob=1e-8, upb=912e-8):
         integrand = np.where((self.wl <= upb) & (self.wl >= lob))[0]

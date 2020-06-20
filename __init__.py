@@ -23,20 +23,20 @@ class McAstroIS:
             
     def findpackages(self):
         for root, dirs, fns in os.walk(__path__[0]):
-            for dir in dirs:
-                if os.path.isfile(os.path.join(__path__[0], dir,
+            for dir_ in dirs:
+                if os.path.isfile(os.path.join(__path__[0], dir_,
                                                "__init__.py")):
-                    self.packages.append(dir)
+                    self.packages.append(dir_)
             break;
     
     def showStatus(self):
         print() 
         print("               McAstro import status")
         print("--------------------------------------------------")
-        print("{:41s} | {:6s}".format("Package", "Status"))
+        print("{:41s} | {:6s}".format("Package", "Loaded"))
         print("--------------------------------------------------")
         for m, v in sorted(self.importStatus.items()):
-            print("{:41s} | {:6}".format(m, v))
+            print("{:41s} | {}".format(m, v))
         
 
 def importCheck():

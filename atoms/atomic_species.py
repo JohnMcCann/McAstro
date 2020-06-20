@@ -1,8 +1,9 @@
 import sys, os
 import numpy as np
 import pandas as pd
+from scipy.interpolate import Akima1DInterpolator
 
-import utils.constants as const
+from McAstro.utils import constants as const
 
 _Zelem = {'H':1, 'He':2, 'Li':3, 'Be':4, 'B':5, 'C':6, 'N':7,
               'O':8, 'F':9,'Ne':10, 'Na':11, 'Mg':12, 'Al':13,
@@ -71,11 +72,27 @@ class atomic_species:
                 self.A = 1
             else:
                 self.A = 2*self.Z
+        E_arr = np.linspace(self.verner_data['E_th'], self.verner_data['E_max'],
+                            100000)
+        wl_arr = np.linspace(const.hc/(self.verner_data['E_max']*const.eV),
+                             const.hc/(self.verner_data['E_th']*const.eV),
+                             100000)
+        self.sigma = Akima1DInterpolator(E_arr, self.cross_section(E_arr))
+        self.sigma_wl = (
+            Akima1DInterpolator(wl_arr,
+                                self.cross_section(const.hc/(wl_arr*const.eV)))
+        )
         self.atomic_data = _atomic_masses.loc[(_atomic_masses['Z']==self.Z)
                                               &(_atomic_masses['A']==self.A)]
         self.mass = self.atomic_data['mass']*const.Da
-        
-        
+
+
+    def sigma_find_E(self, sigma):
+        E_arr = np.linspace(self.verner_data['E_th'], self.verner_data['E_max'],
+                            100000)
+        return Akima1DInterpolator(E_arr, self.sigma(E_arr)-sigma).roots()
+
+
     def cross_section(self, E, units='cm^2', valid_range=True):
         if self.verner_data is None:
             print('No Verner data due to faulty atomic_species.\n'
