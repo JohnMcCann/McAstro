@@ -68,12 +68,14 @@ class glq_spectrum:
         self.data_norm['E'] /= self.E_norm
         # Normalize spectral energy flux
         self.F_tot = integrate.simps(self.data['F_wl'], self.data['wl'])
-        self.data_norm['f_wl'] *= self.wl_norm/self.F_tot
+        self.F_rslv = integrate.simps(self.data['F_wl'], self.data['wl'])
+        self.data_norm['f_wl'] *= self.wl_norm/self.F_rslv
         # Normalize spectral number flux
         # To relate phi_wl to f_wl always use E in cgs not hc/wl_norm or E in eV
         # or phi_wl = (E_mean/E) * f_wl, where E_mean = F_tot/Phi_tot
         self.Phi_tot = integrate.simps(self.data['Phi_wl'], self.data['wl'])
-        self.data_norm['phi_wl'] *= self.wl_norm/self.Phi_tot
+        self.Phi_rslv = integrate.simps(self.data['Phi_wl'], self.data['wl'])
+        self.data_norm['phi_wl'] *= self.wl_norm/self.Phi_rslv
         # Composition of atmosphere
         self.n_species = 0
         self.species_list = []
@@ -82,7 +84,6 @@ class glq_spectrum:
         self.bin_breaks = np.array([self.spectrum.wl_min, self.spectrum.wl_max])
         self.species_breaks = np.array([])
         # Smoothing of spectrum and polynomial fitting
-        self.PHI_FRAC = None
         self.interp, self.n_passes, self.E_mean, self.f_poly, self.poly_deg = (
             [None] for i in range(5)
         )
@@ -455,7 +456,7 @@ class glq_spectrum:
             self.interp[n] = (
                 Akima1DInterpolator(self.data_norm['wl'][mk],
                                     self.data_norm[smth_var][mk])
-            )
+            )            
             self.crits[n] = list(self.interp[n].derivative().roots())
             self.n_crits[n] = len(self.crits[n])
             self.crits[n] = [self.bin_breaks[n], *self.crits[n],
@@ -568,20 +569,35 @@ class glq_spectrum:
             return
         self.wndw_span = window
         # Set the weights and abscissas
-        self.bin_absc, self.bin_wgts = ([None,]*self.n_bins for i in range(2))
+        self.bin_absc, self.bin_wgts, self.interp_norm = (
+            [None,]*self.n_bins for i in range(3)
+        )
         for b in range(self.n_bins):
             self.bin_absc[b], self.bin_wgts[b] = (
                 [None,]*self.n_subbins[b] for i in range(2)
+            )
+            bmk = ((self.data_norm['wl']>=
+                    max(window[0], self.bin_breaks[b]))
+                   &(self.data_norm['wl']<=
+                     min(window[-1], self.bin_breaks[b+1])))
+            # Renormalize interp over this domain to correct smoothing
+            self.interp_norm[b] = 1./(
+                integrate.simps(self.interp[b](self.data_norm['wl'][bmk]),
+                                self.data_norm['wl'][bmk])
             )
             for sb in range(self.n_subbins[b]):
                 deg_total = self.poly_deg[b][sb]+sigma_poly_deg+trans_poly_deg
                 n_pts = (deg_total+2)//2
                 abscissas, weights = np.polynomial.legendre.leggauss(n_pts)
-                mk = ((self.data_norm['wl']>=self.subbin_breaks[b][sb])
-                      &(self.data_norm['wl']<=self.subbin_breaks[b][sb+1]))
+                mk = ((self.data_norm['wl']>=
+                       max(window[0], self.subbin_breaks[b][sb]))
+                      &(self.data_norm['wl']<=
+                        min(window[-1], self.subbin_breaks[b][sb+1])))
+                if len(self.data_norm['wl'][mk]) == 0:
+                    continue
                 # Only set weights and abscissas in window domain else None
-                left = max(window[0], self.data_norm['wl'][mk].iloc[0])
-                right = min(window[1], self.data_norm['wl'][mk].iloc[-1])
+                left = self.data_norm['wl'][mk].iloc[0]
+                right = self.data_norm['wl'][mk].iloc[-1]
                 if left >= right:
                     continue
                 diff = (right-left)/2
@@ -607,29 +623,23 @@ class glq_spectrum:
         self.rslv_span = np.asarray(rslv_span)
         rmk = ((self.data_norm['wl']>=self.rslv_span[0])
                &(self.data_norm['wl']<=self.rslv_span[-1]))
-        # Normalize flux and phi
-        self.data_norm['f_wl'] *= self.F_tot
+        # Calculate normalized totals
         self.F_tot = integrate.simps(self.data['F_wl'][mk],
                                      self.data['wl'][mk])
-        self.data_norm['f_wl'] /= self.F_tot
-        self.data_norm['phi_wl'] *= self.Phi_tot
         self.Phi_tot = integrate.simps(self.data['Phi_wl'][mk],
                                        self.data['wl'][mk])
-        self.data_norm['phi_wl'] /= self.Phi_tot
-        # Calculate resolved spectrum
-        self.Phi_rslv = integrate.simps(self.data['Phi_wl'][rmk],
-                                        self.data['wl'][rmk])
+        # Calculate resolved spectrum and normalize f_wl and phi_wl
+#         self.data_norm['f_wl'] *= self.F_rslv
         self.F_rslv = integrate.simps(self.data['F_wl'][rmk],
                                       self.data['wl'][rmk])
-        ##
-        ##
-        ## HEY THIS SHOULD NOT BE FINAL
-        ##
-        ##
-        if True:
-            self.PHI_FRAC = self.F_rslv/self.F_tot
-        else:
-            self.PHI_FRAC = self.Phi_rslv/self.Phi_tot
+#         self.data_norm['f_wl'] /= self.F_rslv
+#         self.data_norm['phi_wl'] *= self.Phi_rslv
+        self.Phi_rslv = integrate.simps(self.data['Phi_wl'][rmk],
+                                        self.data['wl'][rmk])
+#         self.data_norm['phi_wl'] /= self.Phi_rslv
+        self.data_norm['f_wl'] = self.data['F_wl']*self.wl_norm/self.F_rslv
+        self.data_norm['phi_wl'] = self.data['Phi_wl']*self.wl_norm/self.Phi_rslv
+        # Meta particle stuff?
         self.sigma_mean, self.I_mean = ([None,]*self.n_species
                                         for i in range(2))
         for s, species in enumerate(self.species_list):
@@ -682,7 +692,7 @@ class glq_spectrum:
             mean_E = const.hc/(mono_wl*self.wl_norm)
         else:
             mean_E = self.F_rslv/self.Phi_rslv
-        FtoPHI = 1./mean_E
+        FtoPHI = self.Phi_rslv/self.F_tot
         ## Spans: window set in set_abscissas, resolve & normalized in normalize
         if self.wndw_span is None and mono_wl is None:
             print('WARNING: Window span never set, using entire domain.')
@@ -713,7 +723,7 @@ class glq_spectrum:
             headers += [rf'$\sigma_{{\lambda_i,{name_nospace}}}$']
         # Build data table
         if kind != 'full' or self.n_bins == 0: # monochromatic
-            binrows = np.array([[mean_E, self.PHI_FRAC]])
+            binrows = np.array([[mean_E, 1.0]])
             for i, s in enumerate(self.species_list):
                 if kind == 'meta':
                     cols = self.sigma_mean[i]
@@ -733,7 +743,7 @@ class glq_spectrum:
                         continue
                     col1 = const.hc/(self.bin_absc[b][sb]*self.wl_norm)
                     hnu = col1/const.eV
-                    col2 = (self.bin_wgts[b][sb]
+                    col2 = (self.bin_wgts[b][sb]*self.interp_norm[b]
                             *self.interp[b](self.bin_absc[b][sb]))
                     binrows = np.column_stack([col1, col2])
                     for i, s in enumerate(self.species_list):
@@ -743,14 +753,12 @@ class glq_spectrum:
                     npts += len(self.bin_absc[b][sb])
             table = np.vstack(table)
             df = pd.DataFrame(table, columns=headers)
-            if self.PHI_FRAC is not None:
-                df.iloc[:,1] *= (self.PHI_FRAC/df.iloc[:,1].sum())
             df = df.convert_dtypes()
         # Construct header comment
         comment = f'# NPTS: {npts}\n'
         comment += f'# NSPECIES: {self.n_species}\n'
         comment += f'# FtoPHI: {FtoPHI:.17e}\n'
-        comment += f'# PHI_FRAC: {self.PHI_FRAC:.17e}\n'
+        comment += f'# PHI_FRAC: {1.0:.17e}\n'
         comment += f'# DATE: {self.date}\n'
         comment += f'# KIND: {kind}\n'
         comment += f'# WINDOW: {window[0]:.17e},{window[1]:.17e}\n'
