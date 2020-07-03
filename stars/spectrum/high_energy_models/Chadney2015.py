@@ -2,7 +2,7 @@
 
 # Source paper: Chadney et al. 2015 (2015Icar..250..357C)
 
-def euv_surface_flux(F_x, updated=True):
+def euv_surface_flux(F_x, updated=False):
     """
     Description:
         Given the x-ray surface flux, Chadney et al. give a relation to

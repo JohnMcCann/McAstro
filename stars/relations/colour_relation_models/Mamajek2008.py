@@ -6,7 +6,7 @@ import numpy as np
 
 from McAstro.utils import constants as const
 
-def _rotation_rate(BV0, age, extrapolate=False):
+def rotation_rate(BV0, age, verbose=False):
     """
     Description:
         For a given age, turns a B-V colour into a stellar rotation rate.
@@ -19,25 +19,52 @@ def _rotation_rate(BV0, age, extrapolate=False):
          
     Arguments:
         BV0: intrinsic B-V colour of the star (in magnitudes)
-        
-    Keyword arguments:
-        extrapolate: extrapolate outside fitted colour range (boolean)
-        
+        age: age of star (in years)
+                
     Returns:
         Stellar rotation rate (in seconds)
         
     Source paper:
         Mamajek & Hillenbrand 2008 (2008ApJ...687.1264M)
     """
-    if (BV0 < 0.5 or BV0 > 0.9):
-        if extrapolate:
-            if BV0 < 0.495:
-                return 0
-        else:
-            print("Warning: B-V: {:.2f} is outside Mamajek stellar rotation "
-                  "fitted range fof 0.5 < B-V < 0.9.".format(BV0))
-            return -1
-    t = age/1e6
-    P_rot = 0.407*(BV0-0.495)**(0.325)*t**(0.566)
-    return P_rot*const.day
-rotation_rate = np.vectorize(_rotation_rate)
+    BV0 = np.asarray(BV0)
+    age_Myr = np.asarray(age)/1e6
+    Mamajek_warning = False
+    if np.any(BV0 <= 0.495) or np.any(BV0 >= 0.9):
+        Mamajek_warning = True
+        if verbose:
+            print('WARNING: When calculating stellar rotation rates some B-V\n'
+                  '         colors where outside valid range [0.5, 0.9].\n'
+                  '         Be wary of results that use those rotation rate.')
+    with np.errstate(all='ignore'): #ignore np.where internally complaints
+        return (Mamajek_warning,
+                np.where(BV0 <= 0.495, 0,
+                         0.407*const.day*(BV0-0.495)**(0.325)*age_Myr**(0.566)))
+
+
+def stellar_age(BV0, P_rot, verbose=False):
+    """
+    Description:
+        Solve's Mamajek's relationship for the age given rotation rate.
+
+    Arguments:
+        BV0: intrinsic B-V colour of the star (in magnitudes)
+        P_rot: stellar rotation rate (in seconds)
+
+    Returns:
+        Stellar age (in years)
+    """
+    BV0 = np.asarray(BV0)
+    P_rot = np.asarray(P_rot)
+    Mamajek_warning = False
+    if np.any(BV0 <= 0.495) or np.any(BV0 >= 0.9):
+        Mamajek_warning = True
+        if verbose:
+            print('WARNING: When calculating stellar ages from rotation rates\n'
+                  '         some B-V colors outside valid range [0.5, 0.9].\n'
+                  '         Be wary of results that use those stellar ages.')
+    with np.errstate(all='ignore'): #ignore np.where internally complaints
+        return (Mamajek_warning,
+                np.where(BV0 <= 0.495, 0,
+                         (P_rot/(0.407*const.days)
+                          *(BV0-0.495)**(-0.325))**(1./0.566)*1e6))

@@ -84,11 +84,14 @@ class glq_spectrum:
         self.bin_breaks = np.array([self.spectrum.wl_min, self.spectrum.wl_max])
         self.species_breaks = np.array([])
         # Smoothing of spectrum and polynomial fitting
-        self.interp, self.n_passes, self.E_mean, self.f_poly, self.poly_deg = (
-            [None] for i in range(5)
+        self.f_interp, self.phi_interp, self.n_passes, self.E_mean = (
+            [None] for i in range(4)
         )
         self.subbin_breaks, self.crits, self.n_crits = (
             [None] for i in range(3)
+        )
+        self.f_poly, self.poly_deg = (
+            [None] for i in range(2)
         )
         # Gaussian Quadrature
         self.max_degree = None
@@ -309,11 +312,14 @@ class glq_spectrum:
                     print('ERROR: This should be impossible...\n'
                           '       Time for debugging!')
                     return
-        self.interp, self.n_passes, self.E_mean, self.f_poly, self.poly_deg = (
-            [None,]*self.n_bins for i in range(5)
+        self.f_interp, self.phi_interp, self.n_passes, self.E_mean = (
+            [None,]*self.n_bins for i in range(4)
         )
         self.subbin_breaks, self.crits, self.n_crits = (
             [None,]*self.n_bins for i in range(3)
+        )
+        self.f_poly, self.poly_deg = (
+            [None,]*self.n_bins for i in range(2)
         )
 
 
@@ -347,28 +353,24 @@ class glq_spectrum:
         if self.n_bins == 0: # Monochromatic
             return
         # Select smoothing variable
+        self.conserve_phi = conserve_phi
         if conserve_phi:
-            smth_var = 'phi_wl_smth'
             var = 'phi_wl'
-            othr_var = 'f_wl_smth'
+            smth_var = 'phi_wl_smth'
         else:
-            smth_var = 'f_wl_smth'
             var = 'f_wl'
-            othr_var = 'phi_wl_smth'
+            smth_var = 'f_wl_smth'
         # Smooth spectrum
         for n in range(self.n_bins):
             mk = ((self.data_norm['wl']>=self.bin_breaks[n])
                   &(self.data_norm['wl']<=self.bin_breaks[n+1]))
             # Set bin id
             self.data_norm.loc[mk, 'bin'] = n
-            # Calculate bin fraction
-            frac = integrate.simps(self.data_norm[var][mk],
-                                   self.data_norm['wl'][mk])
             # First Savitzky-Golay filter pass
             self.data_norm.loc[mk, smth_var] = (
                 savgol_filter(self.data_norm.loc[mk, var],
                               savgol_window, savgol_degree)
-                )
+            )
             # Perform multipass Savitzky-Golay filter based on desired result
             if desired_degree is None and crit_dist is None:
                 # Smooth based on a set amount of passes
@@ -387,17 +389,20 @@ class glq_spectrum:
                                       savgol_window, savgol_degree)
                     )
                     self.n_passes[n] += 1
-                    self.interp[n] = (
+                    smth_interp = (
                         Akima1DInterpolator(self.data_norm['wl'][mk],
                                             self.data_norm[smth_var][mk])
                     )
-                    crits = list(self.interp[n].derivative().roots())
+                    crits = list(smth_interp.derivative().roots())
                     if d2_crits:
-                        d2_smooth = savgol_filter(
-                            self.interp[n].derivative(nu=2)(
+                        d2_smooth = (
+                            savgol_filter(smth_interp.derivative(nu=2)(
                                 self.data_norm['wl'][mk]), 11, 1)
-                        d2crits = Akima1DInterpolator(self.data_norm['wl'][mk],
-                                                      d2_smooth).roots()
+                        )
+                        d2crits = (
+                            Akima1DInterpolator(self.data_norm['wl'][mk],
+                                                d2_smooth).roots()
+                        )
                         d2crits = [c for c in d2crits 
                                    if ((c/d2crits[0] > 1.01
                                         and c/d2crits[-1] < 0.99))]
@@ -415,10 +420,10 @@ class glq_spectrum:
                     )
                     self.n_passes[n] += 1
                     # Renormalize smooth spectrum, important so poly normalized
-                    smth_frac = (
-                        integrate.simps(self.data_norm[smth_var][mk],
-                                        self.data_norm['wl'][mk])
-                    )
+                    frac = integrate.simps(self.data_norm[var][mk],
+                                           self.data_norm['wl'][mk])
+                    smth_frac = integrate.simps(self.data_norm[smth_var][mk],
+                                                self.data_norm['wl'][mk])
                     self.data_norm.loc[mk, smth_var] *= (frac/smth_frac)
                     poly, residual, rank, sv, rcond = (
                         np.polyfit(self.data_norm['wl'][mk],
@@ -426,9 +431,9 @@ class glq_spectrum:
                                    desired_degree, full=True)
                     )
                     poly_frac = (
-                        integrate.simps(np.polyval(poly,
-                                                   self.data_norm['wl'][mk]),
-                                        self.data_norm['wl'][mk])
+                        integrate.simps(
+                            np.polyval(poly, self.data_norm['wl'][mk]),
+                            self.data_norm['wl'][mk])
                     )
                     if abs(frac-poly_frac)/frac > 1e-3:
                         continue
@@ -441,38 +446,52 @@ class glq_spectrum:
                     if residual < lsq_err:
                         self.f_poly[n] = poly
                         break
-            # Renormalize smooth spectrum
+            # Add other variable, get correct shape, will normalize next
+            if conserve_phi:
+                self.data_norm.loc[mk, 'f_wl_smth'] = (
+                    self.data_norm['phi_wl_smth'][mk]*self.data_norm['E'][mk]
+                )
+            else:
+                self.data_norm.loc[mk, 'phi_wl_smth'] = (
+                    self.data_norm['f_wl_smth'][mk]/self.data_norm['E'][mk]
+                )
+            # Calculate observation quantities
+            f_frac = integrate.simps(self.data_norm['f_wl'][mk],
+                                     self.data_norm['wl'][mk])
+            phi_frac = integrate.simps(self.data_norm['phi_wl'][mk],
+                                       self.data_norm['wl'][mk])
+            # Normalize smoothed bin to match observations quantities
             normalization = (
-                frac/integrate.simps(self.data_norm[smth_var][mk],
-                                     self.data_norm['wl'][mk]),
+                phi_frac/integrate.simps(self.data_norm['phi_wl_smth'][mk],
+                                         self.data_norm['wl'][mk]),
             )
-            self.data_norm.loc[mk, smth_var] *= normalization
+            self.data_norm.loc[mk, 'phi_wl_smth'] *= normalization
+            normalization = (
+                f_frac/integrate.simps(self.data_norm['f_wl_smth'][mk],
+                                       self.data_norm['wl'][mk]),
+            )
+            self.data_norm.loc[mk, 'f_wl_smth'] *= normalization
             # Calculate E_mean
             self.E_mean[n] = (
                 integrate.simps(self.data['F_wl'][mk], self.data['wl'][mk])
                 /integrate.simps(self.data['Phi_wl'][mk], self.data['wl'][mk])
             )
             # Generate an interpolation function
-            self.interp[n] = (
+            self.phi_interp[n] = (
                 Akima1DInterpolator(self.data_norm['wl'][mk],
-                                    self.data_norm[smth_var][mk])
-            )            
-            self.crits[n] = list(self.interp[n].derivative().roots())
+                                    self.data_norm['phi_wl_smth'][mk])
+            )     
+            self.f_interp[n] = (
+                Akima1DInterpolator(self.data_norm['wl'][mk],
+                                    self.data_norm['f_wl_smth'][mk])
+            )
+            if conserve_phi:
+                self.crits[n] = list(self.phi_interp[n].derivative().roots())
+            else:
+                self.crits[n] = list(self.f_interp[n].derivative().roots())
             self.n_crits[n] = len(self.crits[n])
             self.crits[n] = [self.bin_breaks[n], *self.crits[n],
                              self.bin_breaks[n+1]]
-        # Smooth other variable that wasn't explictly smoothed
-        mk = (self.data_norm['bin']!=-1)
-        if conserve_phi:
-            self.data_norm.loc[mk, 'f_wl_smth'] = (
-                self.data_norm['phi_wl_smth']
-                *(self.Phi_tot/self.F_tot)*self.data['E']
-            )[mk]
-        else:
-            self.data_norm.loc[mk, 'phi_wl_smth'] = (
-                self.data_norm['f_wl_smth']
-                *self.F_tot/(self.Phi_tot*self.data['E'])
-            )[mk]
         return
 
 
@@ -487,7 +506,7 @@ class glq_spectrum:
             poly_deg: Fixed the polynomial degree (overrides lsq_err)
         """
         # Error check
-        if self.interp[0] is None:
+        if self.f_interp[0] is None:
             print("ERROR: Need to smooth spectrum first.")
             return
         if self.n_bins == 0: # monochromatic
@@ -522,22 +541,40 @@ class glq_spectrum:
                     smk = ((self.data_norm['wl']>=self.subbin_breaks[b][sb])
                            &(self.data_norm['wl']<=self.subbin_breaks[b][sb+1]))
                     self.poly_deg[b][sb] = poly_deg
-                    self.f_poly[b][sb], residual, rank, sv, rcond = (
-                        np.polyfit(self.data_norm['wl'][smk],
-                                   self.interp[b](self.data_norm['wl'][smk]),
-                                   poly_deg, full=True)
-                    )
+                    if self.conserve_phi:
+                        self.f_poly[b][sb], residual, rank, sv, rcond = (
+                            np.polyfit(
+                                self.data_norm['wl'][smk],
+                                self.phi_interp[b](self.data_norm['wl'][smk]),
+                                poly_deg, full=True)
+                        )
+                    else:
+                        self.f_poly[b][sb], residual, rank, sv, rcond = (
+                            np.polyfit(
+                                self.data_norm['wl'][smk],
+                                self.f_interp[b](self.data_norm['wl'][smk]),
+                                poly_deg, full=True)
+                        )
             else: # use lsq_err
                 for sb in range(self.n_subbins[b]):
                     smk = ((self.data_norm['wl']>=self.subbin_breaks[b][sb])
                            &(self.data_norm['wl']<=self.subbin_breaks[b][sb+1]))
                     try_degree = 1
                     while True:
-                        self.f_poly[b][sb], residual, rank, sv, rcond = (
-                            np.polyfit(self.data_norm['wl'][smk],
-                                       self.interp[b](self.data_norm['wl'][smk]),
-                                       try_degree, full=True)
-                        )
+                        if self.conserve_phi:
+                            self.f_poly[b][sb], residual, rank, sv, rcond = (
+                                np.polyfit(
+                                    self.data_norm['wl'][smk],
+                                    self.phi_interp[b](self.data_norm['wl'][smk]),
+                                    try_degree, full=True)
+                            )
+                        else:
+                            self.f_poly[b][sb], residual, rank, sv, rcond = (
+                                np.polyfit(
+                                    self.data_norm['wl'][smk],
+                                    self.f_interp[b](self.data_norm['wl'][smk]),
+                                    try_degree, full=True)
+                            )
                         if not residual.size:
                             # If residual wasn't calculated, calculate my own
                             residual = (
@@ -550,6 +587,36 @@ class glq_spectrum:
                             break
                         else:
                             try_degree += 1
+        # I HAVE NO IDEA
+        self.F_smth_rslv, self.Phi_smth_rslv = (
+            [None,]*self.n_bins for i in range(2)
+        )
+        for b in range(self.n_bins):
+            self.F_smth_rslv[b], self.Phi_smth_rslv[b] = (
+                [np.nan,]*self.n_subbins[b] for i in range(2)
+            )
+            for sb in range(self.n_subbins[b]):
+                if (self.rslv_span is None or
+                    np.asarray(self.rslv_span).size != 2):
+                    left = self.subbin_breaks[b][sb]
+                    right = self.subbin_breaks[b][sb+1]
+                else:
+                    left = max(self.rslv_span[0], self.subbin_breaks[b][sb])
+                    right = min(self.rslv_span[-1], self.subbin_breaks[b][sb+1])
+                mk = (self.data_norm['wl']>=left)&(self.data_norm['wl']<=right)
+                if len(self.data_norm['wl'][mk]) == 0:
+                    continue
+                # Calculate integrated smoothed Phi and Flux in the subbin
+                phi_smth_sb = integrate.simps(
+                    self.phi_interp[b](self.data_norm['wl'][mk]),
+                    self.data_norm['wl'][mk]
+                )
+                f_smth_sb = integrate.simps(
+                    self.f_interp[b](self.data_norm['wl'][mk]),
+                    self.data_norm['wl'][mk]
+                )
+                self.Phi_smth_rslv[b][sb] = self.Phi_rslv*phi_smth_sb
+                self.F_smth_rslv[b][sb] = self.F_rslv*f_smth_sb
         return
 
 
@@ -563,27 +630,18 @@ class glq_spectrum:
             return
         # If set to none, set window to span the entire binned spectrum
         if window is None:
-            window = np.asarray(self.bin_breaks[0], self.bin_breaks[-1])
+            window = np.asarray([self.bin_breaks[0], self.bin_breaks[-1]])
         elif window[0] == window[1]:
             self.wndw_span = window
             return
         self.wndw_span = window
         # Set the weights and abscissas
-        self.bin_absc, self.bin_wgts, self.interp_norm = (
-            [None,]*self.n_bins for i in range(3)
+        self.bin_absc, self.bin_wgts = (
+            [None,]*self.n_bins for i in range(2)
         )
         for b in range(self.n_bins):
             self.bin_absc[b], self.bin_wgts[b] = (
                 [None,]*self.n_subbins[b] for i in range(2)
-            )
-            bmk = ((self.data_norm['wl']>=
-                    max(window[0], self.bin_breaks[b]))
-                   &(self.data_norm['wl']<=
-                     min(window[-1], self.bin_breaks[b+1])))
-            # Renormalize interp over this domain to correct smoothing
-            self.interp_norm[b] = 1./(
-                integrate.simps(self.interp[b](self.data_norm['wl'][bmk]),
-                                self.data_norm['wl'][bmk])
             )
             for sb in range(self.n_subbins[b]):
                 deg_total = self.poly_deg[b][sb]+sigma_poly_deg+trans_poly_deg
@@ -629,19 +687,18 @@ class glq_spectrum:
         self.Phi_tot = integrate.simps(self.data['Phi_wl'][mk],
                                        self.data['wl'][mk])
         # Calculate resolved spectrum and normalize f_wl and phi_wl
-#         self.data_norm['f_wl'] *= self.F_rslv
         self.F_rslv = integrate.simps(self.data['F_wl'][rmk],
                                       self.data['wl'][rmk])
-#         self.data_norm['f_wl'] /= self.F_rslv
-#         self.data_norm['phi_wl'] *= self.Phi_rslv
         self.Phi_rslv = integrate.simps(self.data['Phi_wl'][rmk],
                                         self.data['wl'][rmk])
-#         self.data_norm['phi_wl'] /= self.Phi_rslv
-        self.data_norm['f_wl'] = self.data['F_wl']*self.wl_norm/self.F_rslv
-        self.data_norm['phi_wl'] = self.data['Phi_wl']*self.wl_norm/self.Phi_rslv
+        self.data_norm['f_wl'] = (self.data['F_wl']
+                                  *self.wl_norm/self.F_rslv)
+        self.data_norm['phi_wl'] = (self.data['Phi_wl']
+                                    *self.wl_norm/self.Phi_rslv)
         # Meta particle stuff?
-        self.sigma_mean, self.I_mean = ([None,]*self.n_species
-                                        for i in range(2))
+        self.sigma_mean, self.I_mean = (
+            [None,]*self.n_species for i in range(2)
+        )
         for s, species in enumerate(self.species_list):
             self.sigma_mean[s] = (
                 integrate.simps(self.data['Phi_wl'][rmk]*species.sigma[rmk],
@@ -671,7 +728,7 @@ class glq_spectrum:
             kind: Kind of spectrum being saved (full, mono, fixed, or meta)
         """
         # Error check
-        if self.interp[0] is None and self.n_bins != 0:
+        if self.f_interp[0] is None and self.n_bins != 0:
             print('ERROR: First run smooth_spectrum()')
             return
         if self.bin_absc[0] is None and self.n_bins != 0:
@@ -683,17 +740,10 @@ class glq_spectrum:
         if kind == 'full' and self.n_bins == 0:
             print('ERROR: Kind cannot be full when n_bins == 0.')
             return
-        # Calculate header parameters
-        ## Flux to Phi conversion
-        if kind == 'fixed':
-            if mono_wl != self.wndw_span[0]:
-                print('ERROR: If kind is fixed then require mono_wl == window.')
-                return
-            mean_E = const.hc/(mono_wl*self.wl_norm)
-        else:
-            mean_E = self.F_rslv/self.Phi_rslv
-        FtoPHI = self.Phi_rslv/self.F_tot
-        ## Spans: window set in set_abscissas, resolve & normalized in normalize
+        if mono_wl is not None and np.asarray(mono_wl).size != self.n_bins:
+            print('ERROR: Require mono wavelengths for each bin.')
+            return
+        # Spans: window set in set_abscissas, resolve & normalized in normalize
         if self.wndw_span is None and mono_wl is None:
             print('WARNING: Window span never set, using entire domain.')
             window = np.asarray([self.bin_breaks[0],
@@ -715,27 +765,50 @@ class glq_spectrum:
                                      self.bin_breaks[-1]])*self.wl_norm
         else:
             normalized = self.norm_span*self.wl_norm
+        # Calculate header parameters
+        ## mean_E, and Flux to Phi conversion
+        mean_E, PhioverFuv = ([None,]*self.n_bins for i in range(2))
+        if kind == 'fixed':
+            mono_wl = np.asarray(mono_wl)
+            for b, wl in enumerate(mono_wl):
+                if wl <= self.wndw_span[0] or wl >= self.wndw_span[-1]:
+                    print('ERROR: Fixed mono_wls must be in window span.')
+                    return
+                mean_E[b] = const.hc/(wl*self.wl_norm)
+        else:
+            for b in range(self.n_bins):
+                mean_E[b] = (np.nansum(self.F_smth_rslv[b])
+                             /np.nansum(self.Phi_smth_rslv[b]))
+        Phi_smth_tot = 0.
+        for b in range(self.n_bins):
+            PhioverFuv[b] = np.nansum(self.Phi_smth_rslv[b])/self.F_tot
+            Phi_smth_tot += np.nansum(self.Phi_smth_rslv[b])
         # Construct header strings
         headers = [r'$hc/\lambda_i$']
-        headers += [r'$w_i\phi_{\lambda_i}$']
+        headers += [r'$w_i\Phi_{\lambda_i}/F_{uv}$']
         for i, s in enumerate(self.species_list):
             name_nospace = s.atomic_data.name.replace(' ', '')
             headers += [rf'$\sigma_{{\lambda_i,{name_nospace}}}$']
         # Build data table
-        if kind != 'full' or self.n_bins == 0: # monochromatic
-            binrows = np.array([[mean_E, 1.0]])
-            for i, s in enumerate(self.species_list):
-                if kind == 'meta':
-                    cols = self.sigma_mean[i]
-                else:
-                    cols = s.atomic_data.cross_section(mean_E/const.eV)
-                binrows = np.column_stack([binrows, cols])
-            df = pd.DataFrame(binrows, columns=headers)
-            df = df.convert_dtypes()
-            npts = 1
+        FPbreaks = [None,]*self.n_bins
+        table = []
+        npts = 0
+        if kind != 'full': # monochromatic
+            for b in range(self.n_bins):
+                binrows = np.array([
+                    [mean_E[b],
+                     PhioverFuv[b]*np.nansum(self.Phi_smth_rslv[b])/Phi_smth_tot]
+                ])
+                for i, s in enumerate(self.species_list):
+                    if kind == 'meta':
+                        cols = self.sigma_mean[i]
+                    else:
+                        cols = s.atomic_data.cross_section(mean_E[b]/const.eV)
+                    binrows = np.column_stack([binrows, cols])
+                table.append(binrows)
+                npts += 1
+                FPbreaks[b] = npts
         else:
-            table = []
-            npts = 0
             for b in range(self.n_bins):
                 for sb in range(self.n_subbins[b]):
                     # Skip subbins that fell outside window and have None
@@ -743,22 +816,29 @@ class glq_spectrum:
                         continue
                     col1 = const.hc/(self.bin_absc[b][sb]*self.wl_norm)
                     hnu = col1/const.eV
-                    col2 = (self.bin_wgts[b][sb]*self.interp_norm[b]
-                            *self.interp[b](self.bin_absc[b][sb]))
+                    col2 = (self.bin_wgts[b][sb]
+                            *self.phi_interp[b](self.bin_absc[b][sb]))
                     binrows = np.column_stack([col1, col2])
                     for i, s in enumerate(self.species_list):
                         cols = s.atomic_data.cross_section(hnu)
                         binrows = np.column_stack([binrows, cols])
                     table.append(binrows)
                     npts += len(self.bin_absc[b][sb])
-            table = np.vstack(table)
-            df = pd.DataFrame(table, columns=headers)
-            df = df.convert_dtypes()
+                FPbreaks[b] = npts
+        table = np.vstack(table)
+        df = pd.DataFrame(table, columns=headers)
+        # wPhi should sum to PhioverFuv in each bin
+        df.iloc[:FPbreaks[0],1] /= df.iloc[:FPbreaks[0],1].sum()
+        df.iloc[:FPbreaks[0],1] *= PhioverFuv[0]
+        for b in range(1, self.n_bins):
+            df.iloc[FPbreaks[b-1]:FPbreaks[b],1] /= (
+                df.iloc[FPbreaks[b-1]:FPbreaks[b],1].sum()
+            )
+            df.iloc[FPbreaks[b-1]:FPbreaks[b],1] *= PhioverFuv[b]
+        df = df.convert_dtypes()
         # Construct header comment
-        comment = f'# NPTS: {npts}\n'
-        comment += f'# NSPECIES: {self.n_species}\n'
-        comment += f'# FtoPHI: {FtoPHI:.17e}\n'
-        comment += f'# PHI_FRAC: {1.0:.17e}\n'
+        comment = f'# NPTS: {npts:d}\n'
+        comment += f'# NSPECIES: {self.n_species:d}\n'
         comment += f'# DATE: {self.date}\n'
         comment += f'# KIND: {kind}\n'
         comment += f'# WINDOW: {window[0]:.17e},{window[1]:.17e}\n'

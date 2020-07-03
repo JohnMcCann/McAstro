@@ -9,7 +9,7 @@ from McAstro.stars.relations import temperature_relation
 from McAstro.stars.relations import colour_relation
 
 def integrated_uv(mass, semimajor, stellar_age=1e9, P_rot=None,
-                  xray='Jackson', euv='Chadney',
+                  xray='Jackson', euv='Chadney', updated=False,
                   verbose=False, extrapolate=False, shift=False):
     """
     Description:
@@ -90,7 +90,8 @@ def integrated_uv(mass, semimajor, stellar_age=1e9, P_rot=None,
     elif euv == 'Chadney':
         xray_surface_flux = xray_lum/(4*const.pi*radius**2)
         euv_surface_flux = (
-            high_energy.Chadney_euv_surface_flux(xray_surface_flux)
+            high_energy.Chadney_euv_surface_flux(xray_surface_flux,
+                                                 updated=updated)
         )
         euv_lum = (4*const.pi*radius**2)*euv_surface_flux
     elif euv == 'SanzForcada':

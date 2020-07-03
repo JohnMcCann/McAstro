@@ -10,5 +10,5 @@ __all__ += ['Sung_teff_to_BV']
 
 def Ballesteros_teff_to_BV(T_eff):
     return Ballesteros2012.Temp2BV(T_eff)
-Ballesteros_teff_to_BV.__doc__ = (Ballesteros2012._Temp2BV.__doc__)
+Ballesteros_teff_to_BV.__doc__ = (Ballesteros2012.Temp2BV.__doc__)
 __all__ += ['Ballesteros_teff_to_BV']

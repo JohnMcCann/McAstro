@@ -1,10 +1,9 @@
+#!/bin/env python3
+
 import numpy as np
 from scipy.optimize import fsolve
 
 class polytropic():
-    """
-    
-    """
     def __init__(self, Gamma, rad_crit, vel_crit,
                  x_npts=101, x_lo=-2, x_hi=2):
         self.Gamma = Gamma
@@ -32,8 +31,8 @@ def _polytropic_momentum_eq(w, x, Gamma):
     if w <= 0:
         w = 0
     zero = (w**(Gamma+1.)
-            - w**(Gamma-1.)*(4./x + (5.-3.*Gamma)/(Gamma-1.))
-            + x**(2.-2.*Gamma)*(2./(Gamma-1.)))
+            -w**(Gamma-1.)*(4./x+(5.-3.*Gamma)/(Gamma-1.))
+            +x**(2.-2.*Gamma)*(2./(Gamma-1.)))
     return zero
 
 

@@ -8,15 +8,15 @@ from .black_body import BlackBody
 
 __all__ = []
 
-def Chadney_euv_surface_flux(F_x):
-    return Chadney2015.euv_surface_flux(F_x)
+def Chadney_euv_surface_flux(F_x, updated=False):
+    return Chadney2015.euv_surface_flux(F_x, updated=updated)
 Chadney_euv_surface_flux.__doc__ = (Chadney2015.euv_surface_flux.__doc__)
 __all__ += ['Chadney_euv_surface_flux']
 
 
-def Jackson_xray_fraction(BV0, stellar_age, extrapolate=False):
-    return Jackson2012.xray_fraction(BV0, stellar_age, extrapolate=extrapolate)
-Jackson_xray_fraction.__doc__ = (Jackson2012._xray_fraction.__doc__)
+def Jackson_xray_fraction(BV0, stellar_age):
+    return Jackson2012.xray_fraction(BV0, stellar_age)
+Jackson_xray_fraction.__doc__ = (Jackson2012.xray_fraction.__doc__)
 __all__ += ['Jackson_xray_fraction']
 
 
@@ -40,7 +40,7 @@ Tu_xray_luminosity.__doc__ = (Tu2015.xray_luminosity.__doc__)
 __all__ += ['Tu_xray_luminosity']
 
 
-def Wright_xray_fraction(stellar_mass, rot_rate, use_results='old'):
+def Wright_xray_fraction(stellar_mass, rot_rate, use_results='2018'):
     return Wright2018.xray_fraction(stellar_mass, rot_rate,
                                     use_results=use_results)
 Wright_xray_fraction.__doc__ = (Wright2018.xray_fraction.__doc__)
@@ -70,6 +70,7 @@ def bb_euv_surface_flux(T_eff, lob=10e-7, upb=91.2e-7):
     Returns:
         The integrated uv flux at the stellar surface (in erg/cm^2/s)
     """
+    T_eff = np.asarray(T_eff)
     # Fits for T_euv gotten from fitting PHOENIX models
     m0, b0, T0 = 0.655635, 1106.224278, 2300.000000
     m1, b1, T1 = 0.733707, 3204.257429, 5500.000000
@@ -81,6 +82,10 @@ def bb_euv_surface_flux(T_eff, lob=10e-7, upb=91.2e-7):
                                        np.where(T_eff < T3, m2*(T_eff-T2)+b2,
                                                 m3*(T_eff-T3)+b3))))
     Fuv = []
-    for Temp in T_euv:
-        Fuv.append(BlackBody(Temp).spec_integral(lob=lob, upb=upb))
+    print(T_eff, T_euv)
+    if T_euv.size == 1:
+        Fuv.append(BlackBody(T_euv).spec_integral(lob=lob, upb=upb))
+    else:
+        for Temp in T_euv:
+            Fuv.append(BlackBody(Temp).spec_integral(lob=lob, upb=upb))
     return np.asarray(Fuv)

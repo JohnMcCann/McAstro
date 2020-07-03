@@ -4,7 +4,7 @@
 
 import numpy as np
 
-def _Temp2BV(T_eff):
+def Temp2BV(T_eff):
     """
     Description:
         Given the effective temperature of the star, return a B-V colour.
@@ -22,7 +22,6 @@ def _Temp2BV(T_eff):
     a = 0.92
     b = 1.70
     c = 0.62
-    d = T_eff/4600
+    d = np.asarray(T_eff)/4600
     # Inversion of Equation 14 of Ballesteros 2012
     return (2.-d*(b+c)+np.sqrt(4.+(b-c)**2*d**2))/(2*a*d)
-Temp2BV = np.vectorize(_Temp2BV)
